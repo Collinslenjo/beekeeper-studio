@@ -1,10 +1,11 @@
+import path from 'path'
 import Crypto from 'crypto'
 import { Entity, Column, BeforeInsert, BeforeUpdate } from "typeorm"
 
 import {ApplicationEntity} from './application_entity'
 import {EncryptedColumn} from 'typeorm-encrypted-column'
-import config from '../config'
-import { resolveHomePathToAbsolute } from '../lib/utils'
+import { resolveHomePathToAbsolute } from '../../utils'
+import { loadEncryptionKey } from '../../encryption_key'
 
 
 export class DbConnectionBase extends ApplicationEntity {
@@ -45,13 +46,10 @@ export class DbConnectionBase extends ApplicationEntity {
   defaultDatabase
 
   @Column({type: "varchar", nullable: true})
-  path
-
-  @Column({type: "varchar", nullable: true})
   uri
 
   @Column({type: "varchar", length: 500, nullable: false})
-  uniqueHash
+  uniqueHash = "DEPRECATED"
 
   @Column({type: 'boolean', nullable: false, default: false})
   sshEnabled = false
@@ -95,18 +93,43 @@ export class DbConnectionBase extends ApplicationEntity {
   @Column({type: 'boolean', nullable: false, default: false})
   ssl
 
-  /*
-    This unique hash is so that even if a user doesn't save
-    the connection, we can still figure out if they're connected
-    to the same database and keep track of queries against that connection
-    and possibly do stuff like keep tabs open
-  */
-  @BeforeInsert()
-  @BeforeUpdate()
-  setUniqueHashCode() {
-    let str = `${this.host}${this.port}${this.path}${this.uri}${this.sshHost}${this.sshPort}`
-    this.uniqueHash = Crypto.createHash('md5').update(str).digest('hex')
+  // GETTERS
+  get hash() {
+    const str = [
+      this.host,
+      this.port,
+      this.path,
+      this.uri,
+      this.sshHost,
+      this.sshPort,
+      this.defaultDatabase,
+      this.sshBastionHost
+    ].map(part => part || "").join("")
+    return Crypto.createHash('md5').update(str).digest('hex')
   }
+
+
+  get simpleConnectionString() {
+    if (this.connectionType === 'sqlite') {
+      return path.basename(this.defaultDatabase || "./unknown.db")
+    } else {
+      return `${this.host}:${this.port}/${this.defaultDatabase}`
+    }
+  }
+
+  get fullConnectionString() {
+    if (this.connectionType === 'sqlite') {
+      return this.defaultDatabase || "./unknown.db"
+    } else {
+      let result = `${this.username || 'user'}@${this.host}:${this.port}/${this.defaultDatabase}`
+      if (this.sshHost) {
+        result += ` via ${this.sshUsername}@${this.sshHost}`
+        if (this.sshBastionHost) result += ` jump(${this.sshBastionHost})`
+      }
+      return result
+    }
+  }
+
 
 }
 
@@ -130,7 +153,7 @@ export class SavedConnection extends DbConnectionBase {
     type: 'varchar',
     nullable: true,
     encrypt: {
-      key: config.encryptionKey,
+      key: loadEncryptionKey(),
       algorithm: 'aes-256-cbc',
       ivLength: 16,
       looseMatching: false
@@ -142,7 +165,7 @@ export class SavedConnection extends DbConnectionBase {
     type: "varchar",
     nullable: true,
     encrypt: {
-      key: config.encryptionKey,
+      key: loadEncryptionKey(),
       algorithm: 'aes-256-cbc',
       ivLength: 16,
       looseMatching: false
@@ -154,7 +177,7 @@ export class SavedConnection extends DbConnectionBase {
     type: 'varchar',
     nullable: true,
     encrypt: {
-      key: config.encryptionKey,
+      key: loadEncryptionKey(),
       algorithm: 'aes-256-cbc',
       ivLength: 16,
       looseMatching: false
@@ -162,10 +185,18 @@ export class SavedConnection extends DbConnectionBase {
   })
   sshPassword
 
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  checkSqlite() {
+    if (this.connectionType === 'sqlite' && !this.defaultDatabase) {
+      throw new Error("database path must be set for SQLite databases")
+    }
+  }
+
   @BeforeInsert()
   @BeforeUpdate()
   maybeClearPasswords() {
-    console.log("checking password settings")
     if (!this.rememberPassword) {
       this.password = null
       this.sshPassword = null

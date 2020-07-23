@@ -1,34 +1,48 @@
+$titlebar-actions-height:   30px;
+
 .titlebar {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   background: $titlebar-bg;
-  padding: $gutter-h;
+  padding: 0 $gutter-h;
   margin: 0;
+  min-height: 1.6rem;
   z-index: 100;
   -webkit-app-region: drag;
   .titlebar-icon {
     position: absolute;
-    top: 0;
     left: 0;
     bottom: 0;
-
     display: flex;
-    align-items: center;
-    width: 120px;
+    -webkit-app-region: no-drag;
+    // width: 120px;
     img {
-      height: 18px;
+      height: 30px;
       width: 32px;
+      padding: $gutter-h 0;
+      -webkit-app-region: drag;
+    }
+    .flyout-nav {
+      z-index: 1;
+      -webkit-app-region: no-drag;
+      li > a, .menu-item {
+        -webkit-app-region: no-drag;
+      }
     }
   }
   x-menubar {
     margin: -11px 0;
   }
-  .titlebar-title {
+  .titlebar-title {    
+    position: absolute;
+    left: 0;
+    right: 0;
+    text-align: center;
     color: $text-light;
     font-size: 0.85rem;
-    line-height: 1;
+    line-height: 2;
   }
   .titlebar-actions {
     display: flex;
@@ -43,8 +57,9 @@
       color: $text-light;
       margin: 0;
       padding: 0 0.75rem;
-      height: 30px;
+      height: $titlebar-actions-height;
       z-index: 10;
+      box-shadow: none;
       &:hover {
         color: $text-dark;
       }
@@ -74,7 +89,7 @@
   &.windows {
     justify-content: space-between;
     .titlebar-icon {
-      position: initial;
+      position: relative;
       top: initial;
       left: initial;
       bottom: initial;

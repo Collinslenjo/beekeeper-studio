@@ -1,7 +1,11 @@
 import { ipcMain } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import globals from '../common/globals'
+import { getActiveWindows } from './WindowBuilder'
+import log from 'electron-log'
 
 autoUpdater.autoDownload = false
+autoUpdater.logger = log
 
 function dealWithAppImage() {
   if (process.env.DESKTOPINTEGRATION === 'AppImageLauncher') {
@@ -17,21 +21,29 @@ function dealWithAppImage() {
   }
 }
 
-export function manageUpdates(win, debug) {
+function checkForUpdates() {
+  try {
+    autoUpdater.checkForUpdates()
+  } catch (error) {
+    console.error(`Could not check for updates: ${error.message}`)
+  }
+}
+
+export function manageUpdates(debug) {
   dealWithAppImage();
 
   autoUpdater.logger.debug(process.env)
   // HACK(mc, 2019-09-10): work around https://github.com/electron-userland/electron-builder/issues/4046
 
   ipcMain.on('updater-ready', () => {
-    autoUpdater.checkForUpdates()
+    checkForUpdates()
     if (debug) {
-      win.webContents.send('update-available')
+      getActiveWindows().forEach(win => win.webContents.send('update-available'))
     }
   })
 
   autoUpdater.on('update-available', () => {
-    win.webContents.send('update-available')
+    getActiveWindows().forEach(win => win.webContents.send('update-available'))
   })
 
   ipcMain.on('download-update', () => {
@@ -39,11 +51,14 @@ export function manageUpdates(win, debug) {
   })
 
   autoUpdater.on('update-downloaded', () => {
-    win.webContents.send('update-downloaded')
+    getActiveWindows().forEach(win => win.webContents.send('update-downloaded'))
   })
 
   ipcMain.on('install-update', () => {
     autoUpdater.quitAndInstall()
   })
 
+  setInterval(() => {
+    checkForUpdates()
+  }, globals.updateCheckInterval)
 }

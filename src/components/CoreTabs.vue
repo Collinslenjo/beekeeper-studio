@@ -1,5 +1,5 @@
 <template>
-  <div class="core-tabs" v-hotkey="keymap">
+  <div  class="core-tabs" v-hotkey="keymap">
     <div class="tabs-header">
       <ul class="nav-tabs nav">
         <core-tab-header
@@ -33,11 +33,14 @@
 <script>
 
   import _ from 'lodash'
-  import {FavoriteQuery} from '../entity/favorite_query'
+  import {FavoriteQuery} from '../common/appdb/models/favorite_query'
   import QueryEditor from './TabQueryEditor'
   import CoreTabHeader from './CoreTabHeader'
   import { uuidv4 } from '@/lib/crypto'
   import TableTable from './tableview/TableTable'
+  import AppEvent from '../common/AppEvent'
+import platformInfo from '../common/platform_info'
+import { mapGetters } from 'vuex'
 
   export default {
     props: [ 'connection' ],
@@ -51,6 +54,7 @@
       }
     },
     computed: {
+      ...mapGetters({ 'menuStyle': 'settings/menuStyle' }),
       lastTab() {
         return this.tabItems[this.tabItems.length - 1];
       },
@@ -61,15 +65,22 @@
         return _.indexOf(this.tabItems, this.activeTab)
       },
       keymap() {
-
-        const newTab = this.ctrlOrCmd('t')
-        const closeTab = this.ctrlOrCmd('w')
+        const meta = platformInfo.isMac ? 'meta' : 'ctrl'
+        const closeTab = `${meta}+w`
         const result = {
           'ctrl+tab': this.nextTab,
-          'ctrl+shift+tab': this.previousTab
+          'ctrl+shift+tab': this.previousTab,
         }
-        result[newTab] = this.handleCreateTab
-        result[closeTab] = this.closeTab
+
+        // This is a hack becuase codemirror steals the shortcut
+        // when the shortcut is captured on the electron side
+        // but not on mac, on mac we don't wanna capture it. Because reasons.
+        // 'registerAccelerator' doesn't disable shortcuts on mac.
+        if (!platformInfo.isMac) {
+          result[closeTab] = this.closeTab
+        }
+
+        
         return result
       }
     },
@@ -158,6 +169,8 @@
     },
     mounted() {
       this.createQuery()
+      this.$root.$on(AppEvent.closeTab, () => { this.closeTab() })
+      this.$root.$on(AppEvent.newTab, () => { this.createQuery() })
       this.$root.$on('historyClick', (item) => {
         this.createQuery(item.text)
       })

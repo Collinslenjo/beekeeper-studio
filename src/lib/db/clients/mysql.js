@@ -4,7 +4,7 @@ import mysql from 'mysql2';
 import { identify } from 'sql-query-identifier';
 
 import createLogger from '../../logger';
-import { createCancelablePromise } from '../../utils';
+import { createCancelablePromise } from '../../../common/utils';
 import errors from '../../errors';
 import { genericSelectTop } from './utils';
 
@@ -102,21 +102,21 @@ export async function listRoutines(conn) {
 }
 
 export async function listTableColumns(conn, database, table) {
+  const clause = table ? `AND table_name = ?` : ''
   const sql = `
-    SELECT column_name AS 'column_name', data_type AS 'data_type'
+    SELECT table_name AS 'table_name', column_name AS 'column_name', column_type AS 'data_type'
     FROM information_schema.columns
     WHERE table_schema = database()
-    AND table_name = ?
+    ${clause}
     ORDER BY ordinal_position
   `;
 
-  const params = [
-    table,
-  ];
+  const params = table ? [table] : []
 
   const { data } = await driverExecuteQuery(conn, { query: sql, params });
 
   return data.map((row) => ({
+    tableName: row.table_name,
     columnName: row.column_name,
     dataType: row.data_type,
   }));

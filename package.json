@@ -1,6 +1,6 @@
 {
   "name": "beekeeper-studio",
-  "version": "1.5.3",
+  "version": "1.6.10",
   "private": true,
   "description": "An easy-to use SQL query editor and database UI for Mac, Windows, and Linux",
   "author": {
@@ -17,19 +17,22 @@
     "postinstall": "electron-builder install-app-deps",
     "postuninstall": "electron-builder install-app-deps",
     "docs:dev": "vuepress dev docs",
-    "docs:build": "vuepress build docs"
+    "docs:build": "vuepress build docs",
+    "release:prs": "./build/get-prs.sh"
   },
   "main": "background.js",
   "dependencies": {
     "cassandra-driver": "^4.4.0",
     "cli-highlight": "2.0.0",
     "codemirror": "^5.48.2",
-    "core-js": "^3.4.4",
+    "core-js": "3",
     "dateformat": "^3.0.3",
+    "electron-log": "^4.2.2",
     "electron-util": "^0.14.1",
     "humanize-duration": "^3.23.1",
+    "javascript-time-ago": "^2.0.8",
     "jquery": "^3.5.0",
-    "lodash": "^4.17.15",
+    "lodash": "^4.17.19",
     "material-icons": "^0.3.1",
     "mssql": "^6.2.0",
     "mysql2": "^2.1.0",

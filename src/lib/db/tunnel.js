@@ -7,7 +7,7 @@ import createLogger from '../logger';
 import { SSHConnection } from 'node-ssh-forward'
 import appConfig from '../../config'
 
-import { resolveHomePathToAbsolute } from '../utils'
+import { resolveHomePathToAbsolute } from '../../common/utils'
 
 const logger = createLogger('db:tunnel');
 
@@ -38,7 +38,6 @@ export default function(config) {
       } else {
         sshConfig.privateKey = null
       }
-      console.log(sshConfig)
       const connection = new SSHConnection(sshConfig)
       logger().debug("connection created!")
 
@@ -60,7 +59,6 @@ export default function(config) {
       }
       resolve(result)
     } catch (error) {
-      console.log(error)
       reject(error)
     }
   })

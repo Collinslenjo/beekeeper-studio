@@ -4,6 +4,28 @@ const externals = ['sqlite3', 'sequelize', 'typeorm', 'reflect-metadata', 'cassa
 module.exports = {
   pluginOptions: {
     electronBuilder: {
+      chainWebpackMainProcess: config => {
+        config.module
+          .rule('babel')
+          .test(/\.js$/)
+          .use('babel')
+          .loader('babel-loader')
+
+          .options({
+            presets: [
+              ['@babel/preset-env', { 
+                modules: false,
+                targets: {
+                    esmodules: true
+                  }
+              }],
+          ],
+            plugins: [
+              ['@babel/plugin-proposal-decorators', {legacy: true}],
+              ['@babel/plugin-proposal-class-properties', {loose: true}],
+            ]
+          })
+      },
       nodeIntegration: true,
       externals,
       builderOptions: {
@@ -23,6 +45,7 @@ module.exports = {
         ],
         mac: {
           entitlements: "./build/entitlements.mac.plist",
+          entitlementsInherit: "./build/entitlements.mac.plist",
           icon: './public/icons/mac/bk-icon.icns',
           category: "public.app-category.developer-tools",
           "hardenedRuntime": true

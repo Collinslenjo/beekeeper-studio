@@ -62,7 +62,7 @@
 
 <script>
   import os from 'os'
-  import {SavedConnection} from '../entity/saved_connection'
+  import {SavedConnection} from '../common/appdb/models/saved_connection'
   import ConnectionSidebar from './sidebar/ConnectionSidebar'
   import MysqlForm from './connection/MysqlForm'
   import PostgresForm from './connection/PostgresForm'
@@ -99,11 +99,12 @@
         }
       }
     },
-    mounted() {
+    async mounted() {
       this.config = this.defaultConfig
       this.config.sshUsername = os.userInfo().username
-      this.$store.dispatch('loadSavedConfigs')
-      this.$store.dispatch('fetchUsername')
+      await this.$store.dispatch('loadSavedConfigs')
+      await this.$store.dispatch('loadUsedConfigs')
+      await this.$store.dispatch('fetchUsername')
       this.$nextTick(() => {
         const components = [
           this.$refs.sidebar.$refs.sidebar,
@@ -120,7 +121,6 @@
     },
     beforeDestroy() {
       if(this.split) {
-        console.log("destroying split")
         this.split.destroy()
       }
     },

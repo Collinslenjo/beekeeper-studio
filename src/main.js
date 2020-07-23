@@ -18,43 +18,24 @@ import Hint from 'codemirror/addon/hint/show-hint.js'
 import SQLHint from 'codemirror/addon/hint/sql-hint.js'
 import store from './store/index'
 import 'reflect-metadata'
-import {createConnection} from "typeorm";
-import {SavedConnection} from './entity/saved_connection'
-import {UsedConnection} from './entity/used_connection'
-import {UsedQuery} from './entity/used_query'
-import {FavoriteQuery} from './entity/favorite_query'
 import {TypeOrmPlugin} from './lib/typeorm_plugin'
 import config from './config'
-import {Subscriber as EncryptedColumnSubscriber} from 'typeorm-encrypted-column'
-import Migration from './migration/index'
 import ConfigPlugin from './plugins/ConfigPlugin'
+import { ipcRenderer } from 'electron'
+import AppEventHandler from './lib/events/AppEventHandler'
+import Connection from './common/appdb/Connection'
 import xlsx from 'xlsx'
-
+import TimeAgo from 'javascript-time-ago'
+import en from 'javascript-time-ago/locale/en'
 
 (async () => {
   try {
+    TimeAgo.addLocale(en)
     Tabulator.prototype.defaultOptions.layout = "fitDataFill";
     const appDb = path.join(config.userDirectory, 'app.db')
-    const connection = await createConnection({
-      database: appDb,
-      type: 'sqlite',
-      synchronize: false,
-      migrationsRun: false,
-      entities: [
-          SavedConnection,
-          UsedConnection,
-          UsedQuery,
-          FavoriteQuery
-      ],
-      subscriptions: [
-        EncryptedColumnSubscriber
-      ],
-      logging: config.isDevelopment ? true : ['error']
-    })
-
-    const migrator = new Migration(connection, process.env.NODE_ENV)
-    await migrator.run()
-
+    const connection = new Connection(appDb, config.isDevelopment ? true : ['error'])
+    await connection.connect()
+    
     window.$ = $
     window.jQuery = $
     window.sql = SQL
@@ -91,10 +72,14 @@ import xlsx from 'xlsx'
       closeWith: ['button', 'click'],
     })
 
-    new Vue({
+    const app = new Vue({
       render: h => h(App),
       store,
-    }).$mount('#app')
+    })
+    await app.$store.dispatch('settings/initializeSettings')
+    const handler = new AppEventHandler(ipcRenderer, app)
+    handler.registerCallbacks()
+    app.$mount('#app')
   } catch (err) {
     throw err
     // console.error(err)

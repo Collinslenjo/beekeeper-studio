@@ -61,9 +61,6 @@ function wrap(identifier) {
 export async function selectTop(conn, table, offset, limit, orderBy, filters, schema) {
   let orderByString = ""
   let filterString = ""
-  console.log({
-    table, offset, limit, orderBy, filters, schema
-  })
   if (orderBy && orderBy.length > 0) {
     orderByString = "order by " + (orderBy.map((item) => {
       if (_.isObject(item)) {
@@ -98,7 +95,6 @@ export async function selectTop(conn, table, offset, limit, orderBy, filters, sc
   logger().debug(query)
   const countResults = await driverExecuteQuery(conn, { query: countQuery})
   const result = await driverExecuteQuery(conn, { query })
-  console.log(result)
   const rowWithTotal = countResults.data.recordset.find((row) => { return row.total })
   const totalRecords = rowWithTotal ? rowWithTotal.total : 0
   return {
@@ -252,16 +248,26 @@ export async function listRoutines(conn, filter) {
 }
 
 export async function listTableColumns(conn, database, table) {
+  const clause = table ? `WHERE table_name = "${table}"` : ""
   const sql = `
-    SELECT column_name, data_type
+    SELECT table_schema, table_name, column_name, 
+      CASE 
+        WHEN character_maximum_length is not null AND data_type != 'text'
+          THEN CONCAT(data_type, '(', character_maximum_length, ')')
+        WHEN datetime_precision is not null THEN
+          CONCAT(data_type, '(', datetime_precision, ')')
+        ELSE data_type
+      END as data_type
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE table_name = '${table}'
-    ORDER BY ordinal_position
+    ${clause}
+    ORDER BY table_schema, table_name, ordinal_position
   `;
 
   const { data } = await driverExecuteQuery(conn, { query: sql });
 
   return data.recordset.map((row) => ({
+    schemaName: row.table_schema,
+    tableName: row.table_name,
     columnName: row.column_name,
     dataType: row.data_type,
   }));
