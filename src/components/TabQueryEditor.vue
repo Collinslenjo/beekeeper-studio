@@ -1,6 +1,6 @@
 <template>
   <div class="query-editor" v-hotkey="keymap">
-    <div class="top-panel" ref="topPanel">
+    <div class="top-panel" ref="topPanel" >
       <textarea name="editor" class="editor" ref="editor" id="" cols="30" rows="10"></textarea>
       <span class="expand"></span>
       <div class="toolbar text-right">
@@ -27,6 +27,14 @@
           </x-buttons>
         </div>
       </div>
+      <x-contextmenu>
+        <x-menu>
+          <x-menuitem @click.prevent="formatSql">
+            <x-label>Format Query</x-label>
+            <x-shortcut value="Control+Shift+F"></x-shortcut>
+          </x-menuitem>
+        </x-menu>
+      </x-contextmenu>
     </div>
     <div class="bottom-panel" ref="bottomPanel">
       <progress-bar v-if="running"></progress-bar>
@@ -35,51 +43,14 @@
       <div class="message" v-else-if="error"><div class="alert alert-danger"><i class="material-icons">warning</i><span>{{error}}</span></div></div>
       <div v-else><!-- No Data --></div>
       <span class="expand" v-if="!result"></span>
-      <statusbar :class="{'empty': !result, 'query-meta': true}">
-        <template v-if="results.length > 0">
-          <span v-show="results.length > 1" class="result-selector" :title="'Results'">
-            <div class="select-wrap">
-              <select name="resultSelector" id="resultSelector" v-model="selectedResult" class="form-control">
-                <option v-for="(result, index) in results" :selected="selectedResult == index" :key="index" :value="index">Result {{index + 1}}</option>
-              </select>
-            </div>
-          </span>
-          <div class="row-counts row flex-middle" v-if="rowCount > 0" :title="'Records Displayed'">
-            <span class="num-rows">{{rowCount}}</span>
-            <span class="truncated-rows" v-if="result && result.truncated">/&nbsp;{{result.truncatedRowCount}}</span>
-            <span class="records">records</span>
-          </div>
-          <span class="affected-rows" v-if="affectedRowsText " :title="'Rows Affected'">{{ affectedRowsText}}</span>
-          <span class="execute-time row flex-middle" v-if="executeTimeText" :title="'Execution Time'">
-            <i class="material-icons">query_builder</i>
-            <span>{{executeTimeText}}</span>
-          </span>
-          <span class="expand"></span>
-        </template>
-        <template v-else>
-          <span class="expand"></span>
-          <span class="empty">No Data</span>
-        </template>
-        <x-buttons class="download-results" v-if="result">
-          <x-button class="btn btn-link btn-small" v-tooltip="'Download Results (CSV)'" @click.prevent="download('csv')">
-            Download
-          </x-button>
-          <x-button class="btn btn-link btn-small" menu>
-            <i class="material-icons">arrow_drop_down</i>
-            <x-menu>
-              <x-menuitem @click.prevent="download('csv')">
-                <x-label>CSV</x-label>
-              </x-menuitem>
-              <x-menuitem @click.prevent="download('xlsx')">
-                <x-label>Excel</x-label>
-              </x-menuitem>
-              <x-menuitem @click.prevent="download('json')">
-                <x-label>JSON</x-label>
-              </x-menuitem>
-            </x-menu>
-          </x-button>
-        </x-buttons>
-      </statusbar>
+      <!-- STATUS BAR -->
+      <query-editor-status-bar
+        v-model="selectedResult"
+        :results="results"
+        @download="download"
+        @clipboard="clipboard"
+        :executeTime="executeTime"
+      ></query-editor-status-bar>
     </div>
 
     <!-- Save Modal -->
@@ -135,19 +106,19 @@
   import 'codemirror/addon/search/searchcursor'
   import CodeMirror from 'codemirror'
   import Split from 'split.js'
-  import Pluralize from 'pluralize'
-
   import { mapState } from 'vuex'
 
   import { splitQueries, extractParams } from '../lib/db/sql_tools'
   import ProgressBar from './editor/ProgressBar'
   import ResultTable from './editor/ResultTable'
-  import Statusbar from './common/StatusBar'
-  import humanizeDuration from 'humanize-duration'
+  
+  import sqlFormatter from 'sql-formatter';
+
+  import QueryEditorStatusBar from './editor/QueryEditorStatusBar'
 
   export default {
     // this.queryText holds the current editor value, always
-    components: { ResultTable, ProgressBar, Statusbar },
+    components: { ResultTable, ProgressBar, QueryEditorStatusBar},
     props: ['tab', 'active'],
     data() {
       return {
@@ -205,7 +176,7 @@
         return this.individualQueries[this.currentlySelectedQueryIndex]
       },
       currentQueryPosition() {
-        if(!this.editor || !this.currentlySelectedQuery) {
+        if(!this.editor || !this.currentlySelectedQuery || !this.individualQueries) {
           return null
         }
         const otherCandidates = this.individualQueries.slice(0, this.currentlySelectedQueryIndex).filter((query) => query.includes(this.currentlySelectedQuery))
@@ -220,21 +191,6 @@
           to: cursor.to()
         }
 
-      },
-      affectedRowsText() {
-        if (!this.result) {
-          return null
-        }
-
-        const rows = this.result.affectedRows || 0
-        return `${rows} ${Pluralize('row', rows)} affected`
-      },
-      executeTimeText() {
-        if (!this.executeTime) {
-          return null
-        }
-        const executeTime = this.executeTime || 0
-        return humanizeDuration(executeTime)
       },
       rowCount() {
         return this.result && this.result.rows ? this.result.rows.length : 0
@@ -329,7 +285,10 @@
     },
     methods: {
       download(format) {
-        this.$refs.table.download(format);
+        this.$refs.table.download(format)
+      },
+      clipboard() {
+        this.$refs.table.clipboard()
       },
       selectEditor() {
         this.editor.focus()
@@ -339,7 +298,7 @@
       },
       selectFirstParameter() {
         if (!this.$refs['paramInput'] || this.$refs['paramInput'].length == 0) return
-        this.$refs['paramInput'][0].select()        
+        this.$refs['paramInput'][0].select()
       },
       updateEditorHeight() {
         let height = this.$refs.topPanel.clientHeight
@@ -377,7 +336,11 @@
       },
       async submitTabQuery() {
         const text = this.hasSelectedText ? this.editor.getSelection() : this.editor.getValue()
-        this.submitQuery(text)
+        if (text.trim()) {
+          this.submitQuery(text)
+        } else {
+          this.error = 'No query to run'
+        }
       },
       async submitQuery(rawQuery, skipModal) {
         this.running = true
@@ -459,6 +422,10 @@
           }
         }
       },
+      formatSql() {
+        this.editor.setValue(sqlFormatter.format(this.editor.getValue()))
+        this.selectEditor()
+      }
     },
     mounted() {
       const $editor = this.$refs.editor
@@ -497,7 +464,9 @@
           "Ctrl-Enter": this.submitTabQuery,
           "Cmd-Enter": this.submitTabQuery,
           "Ctrl-S": this.triggerSave,
-          "Cmd-S": this.triggerSave
+          "Cmd-S": this.triggerSave,
+          "Ctrl+Shift+F": this.formatSql,
+          "Cmd+Shift+F": this.formatSql
         }
 
         this.editor = CodeMirror.fromTextArea($editor, {

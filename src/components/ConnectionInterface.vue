@@ -2,13 +2,14 @@
   <div class="interface connection-interface">
     <div class="interface-wrap row">
       <sidebar class="connection-sidebar" ref="sidebar">
-        <connection-sidebar :defaultConfig="defaultConfig" :selectedConfig="config" @remove="remove" @edit="edit" @connect="handleConnect"></connection-sidebar>
+        <connection-sidebar :defaultConfig="defaultConfig" :selectedConfig="config" @remove="remove" @duplicate="duplicate" @edit="edit" @connect="handleConnect"></connection-sidebar>
       </sidebar>
       <div ref="content" class="connection-main page-content" id="page-content">
         <div class="small-wrap">
           <div class="card-flat padding">
             <div class="flex flex-between">
               <h3 class="card-title">{{pageTitle}}</h3>
+              <ImportButton :config="config">Import from URL</ImportButton>
             </div>
             <div class="alert alert-danger" v-show="errors">
               <i class="material-icons">warning</i>
@@ -71,11 +72,12 @@
   import SqlServerForm from './connection/SqlServerForm'
   import SaveConnectionForm from './connection/SaveConnectionForm'
   import Split from 'split.js'
+  import ImportButton from './connection/ImportButton'
   import _ from 'lodash'
   // import ImportUrlForm from './connection/ImportUrlForm';
 
   export default {
-    components: { ConnectionSidebar, MysqlForm, PostgresForm, Sidebar, SqliteForm, SqlServerForm, SaveConnectionForm },
+    components: { ConnectionSidebar, MysqlForm, PostgresForm, Sidebar, SqliteForm, SqlServerForm, SaveConnectionForm, ImportButton },
 
     data() {
       return {
@@ -84,7 +86,9 @@
         errors: null,
         connectionError: null,
         testing: false,
-        split: null
+        split: null,
+        url: null,
+        importError: null
       }
     },
     computed: {
@@ -134,6 +138,20 @@
           this.config = this.defaultConfig
         }
         this.$noty.success(`${config.name} deleted`)
+      },
+      async duplicate(config) {
+        // Duplicates ES 6 class of the connection, without any reference to the old one.
+        const duplicateConfig = Object.assign( Object.create( Object.getPrototypeOf(config)), config);
+        duplicateConfig.id = null
+        duplicateConfig.name = 'Copy of ' + duplicateConfig.name
+
+        try {
+          await this.$store.dispatch('saveConnectionConfig', duplicateConfig)
+          this.$noty.success(`The connection was successfully duplicated!`)
+        } catch (ex) {
+          this.$noty.error(`Could not duplicate Connection: ${ex.message}`)
+        }
+
       },
       async submit() {
         this.connectionError = null
@@ -191,3 +209,6 @@
     },
   }
 </script>
+
+<style>
+</style>
