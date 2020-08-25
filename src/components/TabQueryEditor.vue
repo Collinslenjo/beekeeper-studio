@@ -37,16 +37,18 @@
       </x-contextmenu>
     </div>
     <div class="bottom-panel" ref="bottomPanel">
-      <progress-bar v-if="running"></progress-bar>
+      <progress-bar @cancel="cancelQuery" v-if="running"></progress-bar>
       <result-table ref="table" v-else-if="rowCount > 0" :tableHeight="tableHeight" :result="result" :query='query'></result-table>
       <div class="message" v-else-if="result"><div class="alert alert-info"><i class="material-icons">info</i><span>Query Executed Successfully. No Results</span></div></div>
       <div class="message" v-else-if="error"><div class="alert alert-danger"><i class="material-icons">warning</i><span>{{error}}</span></div></div>
+      <div class="message" v-else-if="info"><div class="alert alert-info"><i class="material-icons">warning</i><span>{{info}}</span></div></div>
       <div v-else><!-- No Data --></div>
       <span class="expand" v-if="!result"></span>
       <!-- STATUS BAR -->
       <query-editor-status-bar
         v-model="selectedResult"
         :results="results"
+        :running="running"
         @download="download"
         @clipboard="clipboard"
         :executeTime="executeTime"
@@ -105,13 +107,14 @@
   import _ from 'lodash'
   import 'codemirror/addon/search/searchcursor'
   import CodeMirror from 'codemirror'
+  import 'codemirror/addon/comment/comment'
   import Split from 'split.js'
   import { mapState } from 'vuex'
 
   import { splitQueries, extractParams } from '../lib/db/sql_tools'
   import ProgressBar from './editor/ProgressBar'
   import ResultTable from './editor/ResultTable'
-  
+
   import sqlFormatter from 'sql-formatter';
 
   import QueryEditorStatusBar from './editor/QueryEditorStatusBar'
@@ -129,6 +132,7 @@
         editor: null,
         runningQuery: null,
         error: null,
+        info: null,
         split: null,
         tableHeight: 0,
         savePrompt: false,
@@ -140,7 +144,6 @@
         queryParameterValues: {},
         queryForExecution: null,
         executeTime: 0
-
       }
     },
     computed: {
@@ -284,6 +287,14 @@
       }
     },
     methods: {
+      async cancelQuery() {
+        if(this.running && this.runningQuery) {
+          this.running = false
+          this.info = 'Query Execution Cancelled'
+          await this.runningQuery.cancel()
+          this.runningQuery = null
+        }
+      },
       download(format) {
         this.$refs.table.download(format)
       },
@@ -357,9 +368,9 @@
           const query = this.deparameterizedQuery
           this.$modal.hide('parameters-modal')
 
-          const runningQuery = this.connection.query(query)
+          this.runningQuery = this.connection.query(query)
           const queryStartTime = +new Date()
-          const results = await runningQuery.execute()
+          const results = await this.runningQuery.execute()
           const queryEndTime = +new Date()
           this.executeTime = queryEndTime - queryStartTime
           let totalRows = 0
@@ -377,7 +388,9 @@
           this.results = results
           this.$store.dispatch('logQuery', { text: query, rowCount: totalRows})
         } catch (ex) {
-          this.error = ex
+          if(this.running) {
+            this.error = ex
+          }
         } finally {
           this.running = false
         }
@@ -425,7 +438,16 @@
       formatSql() {
         this.editor.setValue(sqlFormatter.format(this.editor.getValue()))
         this.selectEditor()
-      }
+      },
+      toggleComment() {
+        const cursor = this.editor.getCursor();
+
+        this.editor.execCommand('toggleComment')
+        this.editor.setCursor({
+          line: cursor.line + 1,
+          char: 0
+        })
+      },
     },
     mounted() {
       const $editor = this.$refs.editor
@@ -465,13 +487,21 @@
           "Cmd-Enter": this.submitTabQuery,
           "Ctrl-S": this.triggerSave,
           "Cmd-S": this.triggerSave,
-          "Ctrl+Shift+F": this.formatSql,
-          "Cmd+Shift+F": this.formatSql
+          "Shift-Ctrl-F": this.formatSql,
+          "Shift-Cmd-F": this.formatSql,
+          "Ctrl-/": this.toggleComment,
+          "Cmd-/": this.toggleComment,
+          "Esc": this.cancelQuery
         }
 
+        const modes = {
+          'mysql': 'text/x-mysql',
+          'postgresql': 'text/x-pgsql',
+          'sqlserver': 'text/x-mssql',
+        };
         this.editor = CodeMirror.fromTextArea($editor, {
           lineNumbers: true,
-          mode: "text/x-sql",
+          mode: this.connection.connectionType in modes ? modes[this.connection.connectionType] : "text/x-sql",
           theme: 'monokai',
           extraKeys: {"Ctrl-Space": "autocomplete", "Cmd-Space": "autocomplete"},
           hint: CodeMirror.hint.sql,

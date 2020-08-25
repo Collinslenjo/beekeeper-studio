@@ -47,6 +47,10 @@
     <div ref="table"></div>
     <statusbar :mode="statusbarMode" class="tabulator-footer">
       <div class="col x4">
+        <span class="statusbar-item flex flex-middle" v-if="lastUpdatedText && !editError" :title="`${totalRecordsText} Total Records`">
+          <i class="material-icons">list</i>
+          <span>{{ totalRecordsText }}</span>
+        </span>
         <span class="statusbar-item flex flex-middle" v-if="lastUpdatedText && !editError" :title="'Updated' + ' ' + lastUpdatedText">
           <i class="material-icons">update</i>
           <span>{{lastUpdatedText}}</span>
@@ -93,6 +97,7 @@
 
 <script>
 import Tabulator from "tabulator-tables";
+// import pluralize from 'pluralize'
 import data_converter from "../../mixins/data_converter";
 import DataMutators from '../../mixins/data_mutators'
 import Statusbar from '../common/StatusBar'
@@ -141,6 +146,9 @@ export default {
     };
   },
   computed: {
+    totalRecordsText() {
+      return `${this.totalRecords.toLocaleString()}`
+    },
     pendingEditList() {
       return Object.values(this.pendingEdits)
     },
@@ -172,18 +180,40 @@ export default {
       this.table.columns.forEach(column => {
 
         const keyData = this.tableKeys[column.columnName]
+        // this needs fixing
+        // currently it doesn't fetch the right result if you update the PK
+        // because it uses the PK to fetch the result.
         const editable = this.editable && column.columnName !== this.primaryKey
+        const slimDataType = this.slimDataType(column.dataType)
+        const editorType = this.editorType(column.dataType)
+        const useVerticalNavigation = editorType === 'textarea'
+
+        const formatter = () => {
+          return `<span class="tabletable-title">${column.columnName} <span class="badge">${slimDataType}</span></span>`
+        }
+
+        let headerTooltip = `${column.columnName} ${column.dataType}`
+        if (keyData) {
+          headerTooltip += ` -> ${keyData.toTable}(${keyData.toColumn})`
+        }
 
         const result = {
           title: column.columnName,
           field: column.columnName,
+          titleFormatter: formatter,
           mutatorData: this.resolveDataMutator(column.dataType),
           dataType: column.dataType,
           cellClick: this.cellClick,
           editable: editable,
-          editor: editable ? 'input' : undefined,
+          editor: editable ? editorType : undefined,
+          variableHeight: true,
+          headerTooltip: headerTooltip,
+          cellEditCancelled: cell => cell.getRow().normalizeHeight(),
+          formatter: (cell) => _.isNull(cell.getValue()) ? '(NULL)' : cell.getValue(),
           editorParams: {
+            verticalNavigation: useVerticalNavigation ? 'editor' : undefined,
             search: true,
+            values: column.dataType === 'bool' ? [true, false] : undefined
             // elementAttributes: {
             //   maxLength: column.columnLength // TODO
             // }
@@ -191,7 +221,7 @@ export default {
           cellEdited: this.cellEdited
         }
         results.push(result)
-        
+
 
         if (keyData) {
           const icon = () => "<i class='material-icons fk-link'>launch</i>"
@@ -211,7 +241,7 @@ export default {
           result.cssClass = 'foreign-key'
           results.push(keyResult)
         }
-        
+
       });
       return results
     },
@@ -247,14 +277,16 @@ export default {
   },
   beforeDestroy() {
     if(this.interval) clearInterval(this.interval)
+    if (this.tabulator) {
+      this.tabulator.destroy()
+    }
   },
   async mounted() {
     if (this.initialFilter) {
       this.filter = _.clone(this.initialFilter)
     }
-    
+
     this.rawTableKeys = await this.connection.getTableKeys(this.table.name, this.table.schema)
-    // TODO (matthew): re-enable after implementing for all DBs
     this.primaryKey = await this.connection.getPrimaryKey(this.table.name, this.table.schema)
     this.tabulator = new Tabulator(this.$refs.table, {
       height: this.actualTableHeight,
@@ -271,11 +303,30 @@ export default {
       lastUpdated: null,
       // callbacks
       ajaxRequestFunc: this.dataFetch,
-      index: this.primaryKey
+      index: this.primaryKey,
+      keybindings: {
+        scrollToEnd: false,
+        scrollToStart: false,
+        scrollPageUp: false,
+        scrollPageDown: false
+      }
     });
 
   },
   methods: {
+    slimDataType(dt) {
+      if (dt) {
+        return dt.split("(")[0]
+      }
+      return null
+    },
+    editorType(dt) {
+      switch (dt) {
+        case 'text': return 'textarea'
+        case 'bool': return 'select'
+        default: return 'input'
+      }
+    },
     fkClick(e, cell) {
       log.info('fk-click', cell)
       const value = cell.getValue()
@@ -305,12 +356,16 @@ export default {
       // this makes it easier to select text if not editing
       if (!this.editable) {
         this.selectChildren(cell.getElement())
+      } else {
+        setTimeout(() => {
+          cell.getRow().normalizeHeight();
+        }, 10)
+
       }
 
     },
     cellEdited(cell) {
       log.info('edit', cell)
-      cell.getElement().classList.add('edited')
       const pkCell = cell.getRow().getCells().find(c => c.getField() === this.primaryKey)
       if (!pkCell) {
         this.$noty.error("Can't edit column -- couldn't figure out primary key")
@@ -319,32 +374,45 @@ export default {
         console.log(cell)
         return
       }
+
+      if (cell.getValue() === "" && _.isNil(cell.getOldValue())) {
+        cell.restoreOldValue()
+        return
+      }
+
+      cell.getElement().classList.add('edited')
+      const key = `${pkCell.getValue()}-${cell.getField()}`
+      const currentEdit = this.pendingEdits[key]
       const payload = {
         table: this.table.name,
         schema: this.table.schema,
         column: cell.getField(),
         pkColumn: this.primaryKey,
         primaryKey: pkCell.getValue(),
-        oldValue: cell.getOldValue(),
-        value: cell.getValue(),
-        cell: cell
+        oldValue: currentEdit ? currentEdit.oldValue : cell.getOldValue(),
+        cell: cell,
+        value: cell.getValue(0)
       }
-      const key = `${payload.primaryKey}-${payload.column}`
       this.$set(this.pendingEdits, key, payload)
     },
     async saveChanges() {
       try {
         // throw new Error("This is an error")
         const newData = await this.connection.updateValues(this.pendingEditList)
+        const updateIncludedPK = this.pendingEditList.find(e => e.column === e.pkColumn)
+        if (updateIncludedPK) {
+          this.tabulator.replaceData()
+        } else {
+          this.tabulator.updateData(newData)
+          this.pendingEditList.forEach(edit => {
+            edit.cell.getElement().classList.remove('edited')
+            edit.cell.getElement().classList.add('edit-success')
+            setTimeout(() => {
+              edit.cell.getElement().classList.remove('edit-success')
+            }, 1000)
+          })
+        }
         log.info("new Data: ", newData)
-        this.tabulator.updateData(newData)
-        this.pendingEditList.forEach(edit => {
-          edit.cell.getElement().classList.remove('edited')
-          edit.cell.getElement().classList.add('edit-success')
-          setTimeout(() => {
-            edit.cell.getElement().classList.remove('edit-success')
-          }, 1000)
-        })
         this.pendingEdits = {}
       } catch (ex) {
         this.pendingEditList.forEach(edit => {
@@ -356,11 +424,19 @@ export default {
     },
     discardChanges() {
       this.editError = null
+      const updates = []
       this.pendingEditList.forEach(edit => {
-        edit.cell.restoreOldValue()
+        const update = {}
+        update[edit.pkColumn] = edit.primaryKey
+        update[edit.column] = edit.oldValue
+        updates.push(update)
+        // this.tabulator.updateData(update)
+        // edit.cell.restoreOldValue()
         edit.cell.getElement().classList.remove('edited')
         edit.cell.getElement().classList.remove('edit-error')
       })
+      log.debug('discarding -- applying update', updates)
+      this.tabulator.updateData(updates)
       this.pendingEdits = {}
     },
     triggerFilter() {
@@ -416,7 +492,7 @@ export default {
               this.table.schema
             );
             const r = response.result;
-            this.totalRecords = response.totalRecords;
+            this.totalRecords = Number(response.totalRecords) || 0;
             this.response = response
             this.pendingEdits = []
             this.editError = null
