@@ -10,32 +10,38 @@ $foreign-key-width:      24px;
     border: 1px solid transparent;
     padding: 4px 8px;
     min-height: 28px;
-    // height: 28px!important;
+    height: 28px;
     line-height: 20px;
-
     i.fk-link {
       display:none;
       color: teal;
     }
-
+    input {
+      font-size: 0.85rem;
+      height: 28px;
+      padding: 4px 4px 4px 8px!important;
+    }
+    textarea {
+      border-color: transparent;
+      padding: 4px 6px!important;
+      line-height: 20px;
+    }
     &.active-cell {
       background: $selection;
       border-color: $input-highlight;
       color: $db-select-text;
     }
-
     &.tabulator-editing {
-      display: inline-flex;
-      align-items: center;
       border-color: $theme-base!important;
-      border-radius: 3px!important;
-      padding-left: 4px!important;
+      border-radius: 2px!important;
+      padding: 0;
+      min-height: 28px;
+      height: auto;
     }
-
     &.edited, &.edit-error, &.edit-success {
       border-color: $border-color;
       border-radius: 2px;
-      color: $db-select-text;
+      color: $theme-base;
     }
     &.edited {
       background: rgba($theme-primary, 0.05);
@@ -55,7 +61,7 @@ $foreign-key-width:      24px;
     }
     &.foreign-key-button {
       display: inline-flex;
-      align-items: center;
+      // align-items: center;
       justify-content: flex-end;
       width: $foreign-key-width!important;
       min-width: $foreign-key-width!important;
@@ -66,6 +72,9 @@ $foreign-key-width:      24px;
         font-size: 14px;
         line-height: 20px;
         color: $text-light;
+      }
+      .tabulator-col-resize-handle.prev {
+        display: none;
       }
     }
   }
@@ -117,14 +126,14 @@ $foreign-key-width:      24px;
       &.tabulator-sortable[aria-sort="asc"] {
         .tabulator-col-content {
           .tabulator-arrow {
-            border-bottom-color: $brand-primary;
+            border-bottom-color: $theme-base;
           }
         }
       }
       &.tabulator-sortable[aria-sort="desc"] {
         .tabulator-col-content {
           .tabulator-arrow {
-            border-top-color: $brand-primary;
+            border-top-color: $theme-base;
           }
         }
       }
@@ -135,7 +144,7 @@ $foreign-key-width:      24px;
           }
         }
       }
-      &.foreign-key {
+      &.foreign-key, &.primary-key {
         padding-left: $foreign-key-width!important;
         &:before{
           content: 'vpn_key';
@@ -151,6 +160,11 @@ $foreign-key-width:      24px;
           color: $theme-primary;
           width: $foreign-key-width;
 
+        }
+      }
+      &.primary-key {
+        &:before {
+          color: $theme-secondary;
         }
       }
       &.foreign-key-button {
@@ -177,11 +191,10 @@ $foreign-key-width:      24px;
   }
 
   //holding div that contains loader and covers tabulator element to prevent interaction
-	.tabulator-loader{
-		background:rgba(black,.4);
+	.tabulator-loader {
 		.tabulator-loader-msg{
 			border-radius: 8px;
-			background:transparent;
+			background: transparent;
 			font-weight: normal;
 			font-size: 1rem;
 

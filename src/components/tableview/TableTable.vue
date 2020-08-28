@@ -47,11 +47,11 @@
     <div ref="table"></div>
     <statusbar :mode="statusbarMode" class="tabulator-footer">
       <div class="col x4">
-        <span class="statusbar-item flex flex-middle" v-if="lastUpdatedText && !editError" :title="`${totalRecordsText} Total Records`">
-          <i class="material-icons">list</i>
+        <span class="statusbar-item" v-if="lastUpdatedText && !editError" :title="`${totalRecordsText} Total Records`">
+          <i class="material-icons">list_alt</i>
           <span>{{ totalRecordsText }}</span>
         </span>
-        <span class="statusbar-item flex flex-middle" v-if="lastUpdatedText && !editError" :title="'Updated' + ' ' + lastUpdatedText">
+        <span class="statusbar-item" v-if="lastUpdatedText && !editError" :title="'Updated' + ' ' + lastUpdatedText">
           <i class="material-icons">update</i>
           <span>{{lastUpdatedText}}</span>
         </span>
@@ -109,7 +109,7 @@ const log = rawLog.scope('TableTable')
 export default {
   components: { Statusbar },
   mixins: [data_converter, DataMutators],
-  props: ["table", "connection", "initialFilter", "tabId"],
+  props: ["table", "connection", "initialFilter", "tabId", "active"],
   data() {
     return {
       filterTypes: {
@@ -187,6 +187,7 @@ export default {
         const slimDataType = this.slimDataType(column.dataType)
         const editorType = this.editorType(column.dataType)
         const useVerticalNavigation = editorType === 'textarea'
+        const isPK = this.primaryKey && this.primaryKey === column.columnName
 
         const formatter = () => {
           return `<span class="tabletable-title">${column.columnName} <span class="badge">${slimDataType}</span></span>`
@@ -195,7 +196,12 @@ export default {
         let headerTooltip = `${column.columnName} ${column.dataType}`
         if (keyData) {
           headerTooltip += ` -> ${keyData.toTable}(${keyData.toColumn})`
+        } else if (isPK) {
+          headerTooltip += ' [Primary Key]'
         }
+
+
+        
 
         const result = {
           title: column.columnName,
@@ -204,6 +210,7 @@ export default {
           mutatorData: this.resolveDataMutator(column.dataType),
           dataType: column.dataType,
           cellClick: this.cellClick,
+          cssClass: isPK ? 'primary-key' : '',
           editable: editable,
           editor: editable ? editorType : undefined,
           variableHeight: true,
@@ -225,13 +232,13 @@ export default {
 
         if (keyData) {
           const icon = () => "<i class='material-icons fk-link'>launch</i>"
-          const tooltip = (cell) => {
-            return `View records in ${keyData.toTable} with ${keyData.toColumn} = ${cell.getValue()}`
+          const tooltip = () => {
+            return `View record in ${keyData.toTable}`
           }
           const keyResult = {
             headerSort: false,
             download: false,
-            field: column.columnName,
+            field: column.columnName + '-link',
             title: "",
             cssClass: "foreign-key-button",
             cellClick: this.fkClick,
@@ -258,6 +265,17 @@ export default {
   },
 
   watch: {
+    active() {
+      if (!this.tabulator) return;
+      if (this.active) {
+        this.tabulator.restoreRedraw()
+        this.$nextTick(() => {
+          this.tabulator.redraw()
+        })
+      } else {
+        this.tabulator.blockRedraw()
+      }
+    },
     filterValue() {
       if (this.filter.value === "") {
         this.clearFilter();
@@ -314,6 +332,11 @@ export default {
 
   },
   methods: {
+    valueCellFor(cell) {
+      const fromColumn = cell.getField().replace(/-link$/g, "")
+      const valueCell = cell.getRow().getCell(fromColumn)
+      return valueCell
+    },
     slimDataType(dt) {
       if (dt) {
         return dt.split("(")[0]
@@ -323,15 +346,21 @@ export default {
     editorType(dt) {
       switch (dt) {
         case 'text': return 'textarea'
+        case 'json': return 'textarea'
+        case 'jsonb': return 'textarea'
         case 'bool': return 'select'
         default: return 'input'
       }
     },
     fkClick(e, cell) {
       log.info('fk-click', cell)
-      const value = cell.getValue()
-      const fromColumn = cell.getField()
+      const fromColumn = cell.getField().replace(/-link$/g, "")
+      const valueCell = this.valueCellFor(cell)
+      const value = valueCell.getValue()
+
+      console.log(cell.getField(), fromColumn)
       const keyData = this.tableKeys[fromColumn]
+      console.log("keydata", keyData)
       const tableName = keyData.toTable
       const schemaName = keyData.toSchema
       const table = this.$store.state.tables.find(t => {

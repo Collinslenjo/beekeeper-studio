@@ -17,6 +17,11 @@
       // border-top: 1px solid darken($theme-bg, 6%);
       border-top: 1px solid $border-color;
     }
+    x-menu {
+      hr {
+        margin: ($gutter-h * 0.75) 0;
+      }
+    }
   }
   .sidebar-heading {
     display: flex;
@@ -337,6 +342,9 @@
       max-width: 50%;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .list-item {
+      padding-left: 0;
     }
   }
   .sub-item {
