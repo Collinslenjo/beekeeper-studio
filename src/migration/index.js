@@ -10,7 +10,7 @@ import addSc from './20200707-add-sc-to-used-connections'
 import dev1 from './dev-1'
 import dev2 from './dev-2'
 import domains from './20200519'
-import addEncryptedColumns from './20200907-add_encrypted-columns'
+import encrypt from './20200917-encrypt-passwords'
 import createLogger from '../lib/logger'
 
 const logger = createLogger('migrations')()
@@ -22,7 +22,7 @@ const setupSQL = `
  )
 `
 const realMigrations = [
-  a, b, c, d, domains, createSettings, addZoom, addSc, addEncryptedColumns
+  a, b, c, d, domains, createSettings, addZoom, addSc, encrypt
 ]
 
 const devMigrations = [

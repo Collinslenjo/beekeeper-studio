@@ -1,7 +1,7 @@
 import { SavedConnection } from "../common/appdb/models/saved_connection";
 
 export default {
-  name: "20200907-add_encrypted-columns",
+  name: "20200917-encrypt-passwords",
   async run(runner) {
     try {
       await runner.startTransaction()
@@ -10,11 +10,13 @@ export default {
 
       const entities = await SavedConnection.find();
       entities.forEach(e => {
-        e.password = original_connections.find(c => c.id == e.id).password
-        e.sshKeyfilePassword = original_connections.find(c => c.id == e.id).sshKeyfilePassword
-        e.sshPassword = original_connections.find(c => c.id == e.id).sshPassword
+        const match = original_connections.find(c => c.id === e.id)
+        if (match) {
+          e.password = match.password
+          e.sshKeyfilePassword = match.sshKeyfilePassword
+          e.sshPassword = match.sshPassword
+        }
       });
-
       await SavedConnection.save(entities);
 
       await runner.commitTransaction()
