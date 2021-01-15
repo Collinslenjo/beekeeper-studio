@@ -1,5 +1,5 @@
 #! /bin/bash
 
 set -euxo pipefail
-
-yarn run electron:build --arm64 --armv7l --publish always
+yarn install --frozen-lockfile
+yarn run electron:build --arm64 --publish always

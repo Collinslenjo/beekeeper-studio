@@ -10,12 +10,10 @@ import { FavoriteQuery } from '../common/appdb/models/favorite_query'
 import { UsedQuery } from '../common/appdb/models/used_query'
 import ConnectionProvider from '../lib/connection-provider'
 import SettingStoreModule from './modules/settings/SettingStoreModule'
-import { DBConnection, IDbColumn } from '../lib/db/client'
+import { DBConnection, Routine, TableColumn } from '../lib/db/client'
 import { IDbConnectionPublicServer } from '../lib/db/server'
-
-interface IDbEntityWithColumns {
-  columns: IDbColumn[]
-}
+import { CoreTab, EntityFilter, IDbEntityWithColumns, QueryTab, TableTab } from './models'
+import { entityFilter } from '../lib/db/sql_tools'
 
 interface State {
   usedConfig: Nullable<SavedConnection>,
@@ -24,6 +22,8 @@ interface State {
   connection: Nullable<DBConnection>,
   database: Nullable<string>,
   tables: IDbEntityWithColumns[],
+  routines: Routine[],
+  entityFilter: EntityFilter,
   tablesLoading: string,
   pinStore: {
     [x: string]: string[]
@@ -32,7 +32,8 @@ interface State {
   history: UsedQuery[],
   favorites: UsedQuery[],
   username: Nullable<string>,
-  menuActive: boolean
+  menuActive: boolean,
+  activeTab: Nullable<CoreTab>
 }
 
 Vue.use(Vuex)
@@ -49,13 +50,21 @@ const store = new Vuex.Store<State>({
     connection: null,
     database: null,
     tables: [],
+    routines: [],
+    entityFilter: {
+      filterQuery: undefined,
+      showTables: true,
+      showRoutines: true,
+      showViews: true
+    },
     tablesLoading: "loading tables...",
     pinStore: {},
     connectionConfigs: [],
     history: [],
     favorites: [],
     username: null,
-    menuActive: false
+    menuActive: false,
+    activeTab: null
   },
   getters: {
     orderedUsedConfigs(state) {
@@ -65,12 +74,29 @@ const store = new Vuex.Store<State>({
       const result = state.database ? state.pinStore[state.database] : null
       return _.isNil(result) ? [] : result
     },
-    schemaTables(state){
-      const obj = _.chain(state.tables).groupBy('schema').value()
+    filteredTables(state) {
+      return entityFilter(state.tables, state.entityFilter)
+    },
+    filteredRoutines(state) {
+      return entityFilter(state.routines, state.entityFilter)
+    },
+    schemaTables(state, g){
+      // if no schemas, just return a single schema
+      if (_.chain(state.tables).map('schema').uniq().value().length <= 1) {
+        return [{
+          schema: null,
+          skipSchemaDisplay: true,
+          tables: g.filteredTables,
+          routines: g.filteredRoutines
+        }]
+      }
+      const obj = _.chain(g.filteredTables).groupBy('schema').value()
+      const routines = _.groupBy(g.filteredRoutines, 'schema')
       return _(obj).keys().map(k => {
         return {
           schema: k,
-          tables: obj[k]
+          tables: obj[k],
+          routines: routines[k] || []
         }
       }).orderBy(o => {
         // TODO: have the connection provide the default schema, hard-coded to public by default
@@ -86,6 +112,24 @@ const store = new Vuex.Store<State>({
     }
   },
   mutations: {
+    entityFilter(state, filter) {
+      state.entityFilter = filter
+    },
+    filterQuery(state, str: string) {
+      state.entityFilter.filterQuery = str
+    },
+    showTables(state) {
+      state.entityFilter.showTables = !state.entityFilter.showTables
+    },
+    showViews(state) {
+      state.entityFilter.showViews = !state.entityFilter.showViews
+    },
+    showRoutines(state) {
+      state.entityFilter.showRoutines = !state.entityFilter.showRoutines
+    },
+    tabActive(state, tab: CoreTab) {
+      state.activeTab = tab
+    },
     menuActive(state, value) {
       state.menuActive = !!value
     },
@@ -103,27 +147,42 @@ const store = new Vuex.Store<State>({
       state.usedConfig = null
       state.connection = null
       state.database = null
+      state.tables = []
+      state.routines = []
+      state.entityFilter = {
+        filterQuery: undefined,
+        showTables: true,
+        showViews: true,
+        showRoutines: true
+      }
     },
     updateConnection(state, {connection, database}) {
       state.connection = connection
       state.database = database
     },
     tables(state, tables) {
-      state.tables = tables
+      state.tables = Object.freeze(tables)
+    },
+    routines(state, routines) {
+      state.routines = Object.freeze(routines)
     },
     tablesLoading(state, value: string) {
       state.tablesLoading = value
     },
-    addPinned(state, table: string) {
-      if (state.database && state.pinStore[state.database] === null) {
-        Vue.set(state.pinStore, state.database, [])
-      }
-      if (state.database && !state.pinStore[state.database].includes(table)) {
+    addPinned(state, table: any) {
+      if (state.database && !state.pinStore[state.database]) {
+        Vue.set(state.pinStore, state.database, [table])
+      } else if (state.database && !state.pinStore[state.database].includes(table)) {
         state.pinStore[state.database].push(table)
       }
     },
+    setPinned(state, pins) {
+      if (state.database) {
+        Vue.set(state.pinStore, state.database, pins)
+      }
+    },
     removePinned(state, table) {
-      if (state.database === null || state.pinStore[state.database] === null) {
+      if (!state.database || !state.pinStore[state.database]) {
         return
       }
       Vue.set(state.pinStore, state.database, _.without(state.pinStore[state.database], table))
@@ -169,10 +228,12 @@ const store = new Vuex.Store<State>({
 
     async test(context, config: SavedConnection) {
       // TODO (matthew): fix this mess.
-      if (context.state.username && config.defaultDatabase) {
+      if (context.state.username) {
         const server = ConnectionProvider.for(config, context.state.username)
-        await server?.createConnection(config.defaultDatabase).connect()
+        await server?.createConnection(config.defaultDatabase || undefined).connect()
         server.disconnect()
+      } else {
+        throw "No username provided"
       }
     },
 
@@ -200,13 +261,14 @@ const store = new Vuex.Store<State>({
           await lastUsedConnection.save()
         }
         context.commit('newConnection', {config: config, server, connection})
+      } else {
+        throw "No username provided"
       }
     },
     async disconnect(context) {
       const server = context.state.server
       server?.disconnect()
       context.commit('clearConnection')
-      context.commit('tables', [])
     },
     async changeDatabase(context, newDatabase: string) {
       if (context.state.server) {
@@ -218,6 +280,7 @@ const store = new Vuex.Store<State>({
         }
         context.commit('updateConnection', {connection, database: newDatabase})
         await context.dispatch('updateTables')
+        await context.dispatch('updateRoutines') 
       }
     },
     async updateTables(context) {
@@ -243,7 +306,7 @@ const store = new Vuex.Store<State>({
           context.commit("tablesLoading", `Loading ${tables.length} tables`)
 
           const tableColumns = await context.state.connection.listTableColumns()
-          let viewColumns: IDbColumn[] = []
+          let viewColumns: TableColumn[] = []
           for (let index = 0; index < materialized.length; index++) {
             const view = materialized[index]
             const columns = await context.state.connection.listMaterializedViewColumns(view.name, view.schema)
@@ -265,7 +328,15 @@ const store = new Vuex.Store<State>({
         }
       }
     },
-
+    async updateRoutines(context) {
+      if (!context.state.connection) return;
+      const connection = context.state.connection
+      const routines = await connection.listRoutines({ schema: null })
+      context.commit('routines', routines)
+    },
+    async setFilterQuery(context, filterQuery) {
+      context.commit('filterQuery', filterQuery)
+    },
     async pinTable(context, table) {
       table.pinned = true
       context.commit('addPinned', table)
@@ -273,6 +344,14 @@ const store = new Vuex.Store<State>({
     async unpinTable(context, table) {
       table.pinned = false
       context.commit('removePinned', table)
+    },
+    async pinRoutine(context, routine: Routine) {
+      routine.pinned = true
+      context.commit('addPinned', routine)
+    },
+    async unpinRoutine(context, routine: Routine) {
+      routine.pinned = true
+      context.commit('addPinned', routine)
     },
     async saveConnectionConfig(context, newConfig) {
       await newConfig.save()
@@ -314,13 +393,11 @@ const store = new Vuex.Store<State>({
       context.commit('favorites', items)
     },
     async saveFavorite(context, query: UsedQuery) {
-      if (context.state.database) {
-        query.database = context.state.database
-        await query.save()
-        // otherwise it's already there!
-        if (!context.state.favorites.includes(query)) {
-          context.commit('favoritesAdd', query)
-        }
+      query.database = context.state.database || 'default'
+      await query.save()
+      // otherwise it's already there!
+      if (!context.state.favorites.includes(query)) {
+        context.commit('favoritesAdd', query)
       }
     },
     async removeFavorite(context, favorite) {
@@ -333,7 +410,10 @@ const store = new Vuex.Store<State>({
     },
     async menuActive(context, value) {
       context.commit('menuActive', value)
-    }
+    },
+    async tabActive(context, value: CoreTab) {
+      context.commit('tabActive', value)
+    } 
   },
   plugins: []
 })

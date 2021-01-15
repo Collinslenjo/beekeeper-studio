@@ -1,7 +1,7 @@
 <template>
   <div  class="core-tabs" v-hotkey="keymap">
     <div class="tabs-header">
-      <ul class="nav-tabs nav">
+      <Draggable v-model="tabItems" tag="ul" class="nav-tabs nav" chosen-class="nav-item-wrap-chosen">
         <core-tab-header
           v-for="tab in tabItems"
           :key="tab.id"
@@ -14,7 +14,7 @@
           @closeOther="closeOther"
           @duplicate="duplicate"
           ></core-tab-header>
-      </ul>
+      </Draggable>
       <span class="actions">
         <a @click.prevent="createQuery(null)" class="btn-fab add-query"><i class=" material-icons">add_circle</i></a>
       </span>
@@ -37,22 +37,23 @@
 <script>
 
   import _ from 'lodash'
+  import sqlFormatter from 'sql-formatter';
   import {FavoriteQuery} from '../common/appdb/models/favorite_query'
   import QueryEditor from './TabQueryEditor'
   import CoreTabHeader from './CoreTabHeader'
-  import { uuidv4 } from '@/lib/crypto'
+  import { uuidv4 } from '@/lib/uuid'
   import TableTable from './tableview/TableTable'
   import AppEvent from '../common/AppEvent'
   import platformInfo from '../common/platform_info'
-  import { mapGetters } from 'vuex'
+  import { mapGetters, mapState } from 'vuex'
+  import Draggable from 'vuedraggable'
 
   export default {
     props: [ 'connection' ],
-    components: { QueryEditor, CoreTabHeader, TableTable },
+    components: { QueryEditor, CoreTabHeader, TableTable, Draggable },
     data() {
       return {
         tabItems: [],
-        activeTab: null,
         activeItem: 0,
         newTabId: 1
       }
@@ -61,6 +62,7 @@
 
     },
     computed: {
+      ...mapState(["activeTab"]),
       ...mapGetters({ 'menuStyle': 'settings/menuStyle' }),
       lastTab() {
         return this.tabItems[this.tabItems.length - 1];
@@ -90,6 +92,9 @@
       }
     },
     methods: {
+      async setActiveTab(tab) {
+        await this.$store.dispatch('tabActive', tab)
+      },
       addTab(item) {
         this.tabItems.push(item)
         this.newTabId += 1
@@ -99,17 +104,17 @@
       },
       nextTab() {
         if(this.activeTab == this.lastTab) {
-          this.activeTab = this.firstTab
+          this.setActiveTab(this.firstTab)
         } else {
-          this.activeTab = this.tabItems[this.activeIdx + 1]
+          this.setActiveTab(this.tabItems[this.activeIdx + 1])
         }
       },
 
       previousTab() {
         if(this.activeTab == this.firstTab) {
-          this.activeTab = this.lastTab
+          this.setActiveTab(this.lastTab)
         } else {
-          this.activeTab = this.tabItems[this.activeIdx - 1]
+          this.setActiveTab(this.tabItems[this.activeIdx - 1])
         }
       },
       setTabTitleScope(id, value) {
@@ -137,6 +142,23 @@
 
         this.addTab(result)
       },
+      async loadTableCreate(table) {
+        let method = null
+        if (table.entityType === 'table') method = this.connection.getTableCreateScript
+        if (table.entityType === 'view') method = this.connection.getViewCreateScript
+        if (!method) {
+          this.$noty.error(`Can't find script for ${table.name} (${table.entityType})`)
+          return
+        }
+        const result = await method(table.name, table.schema)
+        const stringResult = sqlFormatter.format(_.isArray(result) ? result[0] : result)
+        this.createQuery(stringResult)
+      },
+      async loadRoutineCreate(routine) {
+        const result = await this.connection.getRoutineCreateScript(routine.name, routine.schema)
+        const stringResult = sqlFormatter.format(_.isArray(result) ? result[0] : result)
+        this.createQuery(stringResult)
+      },
       openTable({ table, filter, tableName }) {
 
         let resolvedTable = null
@@ -162,10 +184,12 @@
         }
         this.addTab(t)
       },
-      click(tab) {
-        this.activeTab = tab
+      async click(tab) {
+        await this.setActiveTab(tab)
+
       },
       close(tab) {
+        console.log('closing tab', tab.title)
         if (this.activeTab === tab) {
           if(tab === this.lastTab) {
             this.previousTab()
@@ -181,10 +205,11 @@
       },
       closeAll() {
         this.tabItems = []
+        this.setActiveTab(null)
       },
       closeOther(tab) {
         this.tabItems = [tab]
-        this.activeTab = tab;
+        this.setActiveTab(tab)
         if (tab.query && tab.query.id) {
           tab.query.reload()
         }
@@ -211,7 +236,9 @@
     },
     mounted() {
       this.createQuery()
-      this.$root.$on(AppEvent.closeTab, () => { this.closeTab() })
+      this.$root.$on(AppEvent.closeTab, () => {
+        this.closeTab()
+      })
       this.$root.$on(AppEvent.newTab, () => { this.createQuery() })
       this.$root.$on('historyClick', (item) => {
         this.createQuery(item.text)
@@ -219,6 +246,8 @@
 
       this.$root.$on('loadTable', this.openTable)
       this.$root.$on('loadSettings', this.openSettings)
+      this.$root.$on('loadTableCreate', this.loadTableCreate)
+      this.$root.$on('loadRoutineCreate', this.loadRoutineCreate)
       this.$root.$on('favoriteClick', (item) => {
         const queriesOnly = this.tabItems.map((item) => {
           return item.query

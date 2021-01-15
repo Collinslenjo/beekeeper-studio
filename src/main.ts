@@ -32,15 +32,24 @@ import TimeAgo from 'javascript-time-ago'
 import en from 'javascript-time-ago/locale/en'
 import log from 'electron-log'
 import VueClipboard from 'vue-clipboard2'
+import platformInfo from './common/platform_info'
 
 (async () => {
   try {
+
+    const transports = [log.transports.console, log.transports.file]
+    if (platformInfo.isDevelopment || platformInfo.debugEnabled) {
+      transports.forEach(t => t.level = 'silly')
+    } else {
+      transports.forEach(t => t.level = 'warn')
+    }
+
     log.info("starting logging")
     tls.DEFAULT_MIN_VERSION = "TLSv1"
     TimeAgo.addLocale(en)
     // @ts-ignore
     Tabulator.prototype.defaultOptions.layout = "fitDataFill";
-    const appDb = path.join(config.userDirectory, 'app.db')
+    const appDb = platformInfo.appDbPath
     const connection = new Connection(appDb, config.isDevelopment ? true : ['error'])
     await connection.connect();
 
@@ -50,7 +59,7 @@ import VueClipboard from 'vue-clipboard2'
     (window as any).hint = Hint;
     (window as any).SQLHint = SQLHint;
     (window as any).XLSX = xlsx;
-    Vue.config.devtools = process.env.NODE_ENV === 'development';
+    Vue.config.devtools = platformInfo.isDevelopment;
 
     Vue.mixin({
       methods: {

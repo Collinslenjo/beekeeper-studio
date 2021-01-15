@@ -27,7 +27,11 @@ export default {
       osUser: osUsername,
       password: config.password,
       ssh: ssh,
-      ssl: config.ssl
+      ssl: config.ssl,
+      sslCaFile: config.sslCaFile,
+      sslCertFile: config.sslCertFile,
+      sslKeyFile: config.sslKeyFile,
+      sslRejectUnauthorized: config.sslRejectUnauthorized,
     }
   },
 

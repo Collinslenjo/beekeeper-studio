@@ -30,7 +30,7 @@
       <x-contextmenu>
         <x-menu>
           <x-menuitem @click.prevent="formatSql">
-            <x-label>Format Query</x-label>
+            <x-label>Format query</x-label>
             <x-shortcut value="Control+Shift+F"></x-shortcut>
           </x-menuitem>
         </x-menu>
@@ -110,14 +110,17 @@
   import 'codemirror/addon/comment/comment'
   import Split from 'split.js'
   import { mapState } from 'vuex'
+  import { identify } from 'sql-query-identifier'
 
   import { splitQueries, extractParams } from '../lib/db/sql_tools'
-  import ProgressBar from './editor/ProgressBar'
-  import ResultTable from './editor/ResultTable'
+  import ProgressBar from './editor/ProgressBar.vue'
+  import ResultTable from './editor/ResultTable.vue'
 
   import sqlFormatter from 'sql-formatter';
 
-  import QueryEditorStatusBar from './editor/QueryEditorStatusBar'
+  import QueryEditorStatusBar from './editor/QueryEditorStatusBar.vue'
+  import rawlog from 'electron-log'
+  const log = rawlog.scope('query-editor')
 
   export default {
     // this.queryText holds the current editor value, always
@@ -125,7 +128,6 @@
     props: ['tab', 'active'],
     data() {
       return {
-        // result: null,
         results: [],
         running: false,
         selectedResult: 0,
@@ -147,6 +149,14 @@
       }
     },
     computed: {
+      dialect() {
+        // dialect for sql-query-identifier
+        const mappings = {
+          'sqlserver': 'mssql',
+          'sqlite': 'sqlite'
+        }
+        return mappings[this.connectionType] || 'generic'
+      },
       hasSelectedText() {
         return this.editor ? !!this.editor.getSelection() : false
       },
@@ -160,17 +170,13 @@
         return this.tab.query.text
       },
       individualQueries() {
+        if (!this.queryText) return []
         return splitQueries(this.queryText)
       },
       currentlySelectedQueryIndex() {
-        let currentPos = 0
         const queries = this.individualQueries
         for (let i = 0; i < queries.length; i++) {
-          currentPos += queries[i].length
-          // currentPos += i == 0 ? queries[i].length : queries[i].length + 1
-          if (currentPos >= this.cursorIndex) {
-            return i
-          }
+          if (this.cursorIndex <= queries[i].end + 1) return i
         }
         return null
       },
@@ -182,16 +188,15 @@
         if(!this.editor || !this.currentlySelectedQuery || !this.individualQueries) {
           return null
         }
-        const otherCandidates = this.individualQueries.slice(0, this.currentlySelectedQueryIndex).filter((query) => query.includes(this.currentlySelectedQuery))
-        let i = 0
-        const cursor = this.editor.getSearchCursor(this.currentlySelectedQuery)
-        while(i < otherCandidates.length + 1) {
-          i ++
-          if (!cursor.findNext()) return null
-        }
+        const qi = this.currentlySelectedQueryIndex
+        const previousQuery = qi === 0 ? null : this.individualQueries[qi - 1]
+        // adding 1 to account for semicolon
+        const start = previousQuery ? previousQuery.end + 1: 0
+        const end = this.currentlySelectedQuery.end
+
         return {
-          from: cursor.from(),
-          to: cursor.to()
+          from: start,
+          to: end + 1
         }
 
       },
@@ -223,12 +228,16 @@
         const result = {}
         this.tables.forEach(table => {
           const cleanColumns = table.columns.map(col => {
-            return col.columnName
+            return /\./.test(col.columnName) ? `"${col.columnName}"` : col.columnName
           })
-          if (this.connectionType === 'postgresql' && /[A-Z]/.test(table.name)) {
+
+          // add quoted option for everyone that needs to be quoted
+          if (this.connectionType === 'postgresql' && (/[^a-z0-9_]/.test(table.name) || /^\d/.test(table.name)))
             result[`"${table.name}"`] = cleanColumns
-          }
-          result[table.name] = cleanColumns
+          
+          // don't add table names that can get in conflict with database schema 
+          if (!/\./.test(table.name))
+            result[table.name] = cleanColumns
         })
         return { tables: result }
       },
@@ -246,7 +255,6 @@
         });
         return query;
       },
-
       ...mapState(['usedConfig', 'connection', 'database', 'tables'])
     },
     watch: {
@@ -265,7 +273,7 @@
           this.marker.clear()
         }
 
-        if(this.individualQueries.length < 2) {
+        if(!this.individualQueries || this.individualQueries.length < 2) {
           return;
         }
 
@@ -273,7 +281,36 @@
           return
         }
         const { from, to } = this.currentQueryPosition
-        this.marker = this.editor.getDoc().markText(from, to, {className: 'highlight'})
+
+        const editorText = this.editor.getValue()
+        const lines = editorText.split(/\n/)
+
+        const markStart = {
+          line: null,
+          ch: null
+        }
+        const markEnd = {
+          line: null,
+          ch: null
+        }
+        let startMarked = false
+        let endMarked = false
+        let startOfLine = 0
+        lines.forEach((line, idx) => {
+          const eol = startOfLine + line.length + 1
+          if (startOfLine <= from && from <= eol && !startMarked) {
+            markStart.line = idx
+            markStart.ch = from - startOfLine
+            startMarked = true
+          }
+          if (startOfLine <= to && to <= eol && !endMarked) {
+            markEnd.line = idx
+            markEnd.ch = to - startOfLine
+            endMarked = true
+          }
+          startOfLine += line.length + 1
+        })
+        this.marker = this.editor.getDoc().markText(markStart, markEnd, {className: 'highlight'})
       },
       hintOptions() {
         this.editor.setOption('hintOptions',this.hintOptions)
@@ -342,7 +379,7 @@
       },
       async submitCurrentQuery() {
         if (this.currentlySelectedQuery) {
-          this.submitQuery(this.currentlySelectedQuery)
+          this.submitQuery(this.currentlySelectedQuery.text)
         } else {
           this.results = []
           this.error = 'No query to run'
@@ -361,6 +398,12 @@
         this.queryForExecution = rawQuery
         this.results = []
         this.selectedResult = 0
+        let identification = []
+        try {
+          identification = identify(rawQuery, { strict: false, dialect: this.dialect })
+        } catch (ex) {
+          log.error("Unable to identify query", ex)
+        }
 
         try {
           if (this.queryParameterPlaceholders.length > 0 && !skipModal) {
@@ -389,7 +432,15 @@
             }
           })
           this.results = results
+
           this.$store.dispatch('logQuery', { text: query, rowCount: totalRows})
+          log.debug('identification', identification)
+          const found = identification.find(i => {
+            return i.type === 'CREATE_TABLE'
+          })
+          if (found) {
+            this.$store.dispatch('updateTables')
+          }
         } catch (ex) {
           if(this.running) {
             this.error = ex
@@ -400,12 +451,6 @@
       },
       inQuote() {
         return false
-      },
-      wrapIdentifier(value) {
-        if (value && this.connectionType === 'postgresql' && /[A-Z]/.test(value)) {
-          return `"${value.replace(/^"|"$/g, '')}"`
-        }
-        return value;
       },
       maybeAutoComplete(editor, e) {
         // BUGS:
@@ -520,10 +565,18 @@
         if (this.connectionType === 'postgresql')  {
           this.editor.on("beforeChange", (cm, co) => {
             const { to, from, origin, text } = co;
-            if (origin === 'complete') {
-              let [tableName, colName] = text[0].split('.');
-              const newText = [[this.wrapIdentifier(tableName), this.wrapIdentifier(colName)].filter(s => s).join('.')]
-              co.update(from, to, newText, origin);
+
+            const keywords = CodeMirror.resolveMode(this.editor.options.mode).keywords
+
+            // quote names when needed
+            if (origin === 'complete' && keywords[text[0].toLowerCase()] != true) {
+              const names = text[0]
+                .match(/("[^"]*"|[^.]+)/g)
+                .map(n => /^\d/.test(n) ? `"${n}"` : n)
+                .map(n => /[^a-z0-9_]/.test(n) && !/"/.test(n) ? `"${n}"` : n)
+                .join('.')
+  
+              co.update(from, to, [names], origin)
             }
           })
         }

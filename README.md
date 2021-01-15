@@ -26,7 +26,7 @@ Top feature: It's smooth 🍫, fast 🏎, and you'll actually enjoy using it �
 
 One of our frustrations with other open-source SQL editors and database managers is that they take a 'kitchen sink' approach to features, adding so many features that the UI becomes cluttered and hard to navigate. We wanted a good looking, open source SQL workbench that's powerful, but also easy to use. We couldn't find one, so we created it!
 
-![SQL Editing Demo](https://raw.githubusercontent.com/beekeeper-studio/beekeeper-studio/master/screenshots/beekeeper-studio-demo.gif)
+![Beekeeper Studio Screenshot](https://www.beekeeperstudio.io/assets/img/screenshots/main-dark-9e3099be326f5ba8f2389545e6811e9dda80ae842f210450385226f7cf3cc817.png)
 
 Beekeeper Studio supports connecting to the following databases:
 
@@ -34,6 +34,7 @@ Beekeeper Studio supports connecting to the following databases:
 - MySQL
 - MariaDB
 - Postgres
+- CockroachDB
 - SQL Server
 - Amazon Redshift
 
@@ -43,7 +44,7 @@ Download the latest release from the [releases page](https://github.com/beekeepe
 
 ## Contributing to Beekeeper Studio
 
-We love *any* community engagement. Even if you're complaining becuase you don't like something about the app!
+We love *any* community engagement. Even if you're complaining because you don't like something about the app!
 
 Because building an inclusive and welcoming community is important to us, please follow our code of conduct as you engage with the project.
 
@@ -68,8 +69,8 @@ yarn run electron:serve ## the app will now start
 ### Where to make changes?
 
 Beekeeper Studio has two entry points:
-- background.js - this is the electron-side code that controls native things like showing windows.
-- main.js - this is the entry point for the Vue.js app. You can follow the Vue component breadcrumbs from `App.vue` to find the screen you need.
+- `background.js` - this is the electron-side code that controls native things like showing windows.
+- `main.js` - this is the entry point for the Vue.js app. You can follow the Vue component breadcrumbs from `App.vue` to find the screen you need.
 
 **Generally we have two 'screens':**
 - ConnectionInterface - connecting to a DB
@@ -87,7 +88,7 @@ Beekeeper Studio has two entry points:
 
 1. Up the version number in package.json
 2. Replace `build/release-notes.md` with the latest release notes. Follow the format that is there.
-  - run `git log <last-tag>..HEAD --oneline | grep 'Merge pull' to find PRs merged
+  - run `git log <last-tag>..HEAD --oneline | grep 'Merge pull'` to find PRs merged
 2. Commit
 3. Push to master
 4. Create a tag `git tag v<version>`. It must start with a 'v'

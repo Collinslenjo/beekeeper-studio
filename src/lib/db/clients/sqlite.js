@@ -24,6 +24,7 @@ export default async function (server, database) {
   await driverExecuteQuery(conn, { query: 'SELECT sqlite_version()' });
 
   return {
+    supportedFeatures: () => ({ customRoutines: false }),
     wrapIdentifier,
     disconnect: () => disconnect(conn),
     listTables: () => listTables(conn),
@@ -65,6 +66,10 @@ export function wrapIdentifier(value) {
   const matched = value.match(/(.*?)(\[[0-9]\])/); // eslint-disable-line no-useless-escape
   if (matched) return wrapIdentifier(matched[1]) + matched[2];
   return `"${value.replace(/"/g, '""')}"`;
+}
+
+function escapeString(value) {
+  return value.replace("'", "''")
 }
 
 
@@ -261,16 +266,16 @@ export function getTableReferences() {
 }
 
 export async function getPrimaryKey(conn, database, table) {
-  log.debug('finding foreign key for', database, table)
-  const sql = `pragma table_info('${table}')`
-  const { data } = await driverExecuteQuery(conn, { query: sql })
-  const found = data.find(r => r.pk === 1)
-  return found ? found.name : null
+  log.debug('finding primary key for', database, table)
+  const sql = `pragma table_info('${escapeString(table)}')`
+  const { data } = await driverExecuteQuery(conn, { query: sql})
+  const found = data.filter(r => r.pk > 0)
+  if (found.length !== 1) return null
+  return found[0].name
 }
 
 export async function getTableKeys(conn, database, table) {
-  console.log("table keys")
-  const sql = `pragma foreign_key_list('${table}')`
+  const sql = `pragma foreign_key_list('${escapeString(table)}')`
   log.debug("running SQL", sql)
   const { data } = await driverExecuteQuery(conn, { query: sql });
   log.debug("response", data)
@@ -354,7 +359,7 @@ function parseRowQueryResult({ data, statement, changes }) {
 
 function identifyCommands(queryText) {
   try {
-    return identify(queryText, { strict: false });
+    return identify(queryText, { strict: false, dialect: 'sqlite' });
   } catch (err) {
     return [];
   }

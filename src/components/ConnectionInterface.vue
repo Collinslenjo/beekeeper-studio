@@ -38,11 +38,11 @@
                 <sql-server-form v-if="config.connectionType === 'sqlserver'" :config="config" :testing="testing"></sql-server-form>
 
                 <!-- TEST AND CONNECT -->
-                <div class="row flex-middle">
+                <div class="test-connect row flex-middle">
                   <span class="expand"></span>
                   <div class="btn-group">
-                    <button :disabled="testing" class="btn btn-flat" @click.prevent="testConnection">Test</button>
-                    <button :disabled="testing" class="btn btn-primary" @click.prevent="submit">Connect</button>
+                    <button :disabled="testing" class="btn btn-flat" type="button" @click.prevent="testConnection">Test</button>
+                    <button :disabled="testing" class="btn btn-primary" type="submit" @click.prevent="submit">Connect</button>
                   </div>
                 </div>
                 <SaveConnectionForm :config="config" @save="save"></SaveConnectionForm>
@@ -100,6 +100,14 @@
           return "Quick Connect"
         } else {
           return this.config.name
+        }
+      }
+    },
+    watch: {
+      config: {
+        deep: true,
+        handler() {
+          this.connectionError = null
         }
       }
     },
