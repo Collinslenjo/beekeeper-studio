@@ -1,11 +1,11 @@
 <template>
   <div class="interface connection-interface">
     <div class="interface-wrap row">
-      <sidebar class="connection-sidebar" ref="sidebar">
+      <sidebar class="connection-sidebar" ref="sidebar" v-show="sidebarShown">
         <connection-sidebar :defaultConfig="defaultConfig" :selectedConfig="config" @remove="remove" @duplicate="duplicate" @edit="edit" @connect="handleConnect"></connection-sidebar>
       </sidebar>
-      <div ref="content" class="connection-main page-content" id="page-content">
-        <div class="small-wrap">
+      <div ref="content" class="connection-main page-content flex-col" id="page-content">
+        <div class="small-wrap expand">
           <div class="card-flat padding">
             <div class="flex flex-between">
               <h3 class="card-title">{{pageTitle}}</h3>
@@ -54,8 +54,8 @@
           <div v-if="connectionError" class="alert alert-danger">
             {{connectionError}}
           </div>
-
         </div>
+        <small class="app-version"><a href="">Beekeeper Studio v1.9.1 (Feb 15 2021)</a></small>
       </div>
     </div>
   </div>
@@ -88,7 +88,8 @@
         testing: false,
         split: null,
         url: null,
-        importError: null
+        importError: null,
+        sidebarShown: true,
       }
     },
     computed: {
@@ -128,6 +129,8 @@
           }),
           sizes: [25,75],
           gutterize: 8,
+          minSize: 300,
+          expandToMin: true,
         })
       })
     },

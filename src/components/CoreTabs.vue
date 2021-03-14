@@ -1,7 +1,8 @@
 <template>
   <div  class="core-tabs" v-hotkey="keymap">
     <div class="tabs-header">
-      <Draggable v-model="tabItems" tag="ul" class="nav-tabs nav" chosen-class="nav-item-wrap-chosen">
+      <!-- <div class="nav-tabs nav"> -->
+      <Draggable :options="dragOptions" v-model="tabItems" tag="ul" class="nav-tabs nav" chosen-class="nav-item-wrap-chosen">
         <core-tab-header
           v-for="tab in tabItems"
           :key="tab.id"
@@ -15,11 +16,15 @@
           @duplicate="duplicate"
           ></core-tab-header>
       </Draggable>
+      <!-- </div> -->
       <span class="actions">
         <a @click.prevent="createQuery(null)" class="btn-fab add-query"><i class=" material-icons">add_circle</i></a>
       </span>
     </div>
     <div class="tab-content">
+      <div class="layout-center expand">
+        <shortcut-hints></shortcut-hints>
+      </div>
       <div
         v-for="(tab, idx) in tabItems"
         class="tab-pane"
@@ -48,15 +53,29 @@
   import platformInfo from '../common/platform_info'
   import { mapGetters, mapState } from 'vuex'
   import Draggable from 'vuedraggable'
+  import ShortcutHints from './editor/ShortcutHints.vue'
 
   export default {
     props: [ 'connection' ],
-    components: { QueryEditor, CoreTabHeader, TableTable, Draggable },
+    components: { QueryEditor, CoreTabHeader, TableTable, Draggable, ShortcutHints },
     data() {
       return {
         tabItems: [],
         activeItem: 0,
-        newTabId: 1
+        newTabId: 1,
+        dragOptions: {
+          handle: '.nav-item'
+        },
+        rootBindings: [
+          { event: AppEvent.closeTab, handler: this.closeTab },
+          { event: AppEvent.newTab, handler: this.createQuery},
+          { event: 'historyClick', handler: this.createQueryFromItem},
+          { event: 'loadTable', handler: this.openTable },
+          { event: 'loadSettings', handler: this.openSettings },
+          { event: 'loadTableCreate', handler: this.loadTableCreate },
+          { event: 'loadRoutineCreate', handler: this.loadRoutineCreate },
+          { event: 'favoriteClick', handler: this.favoriteClick }
+        ]
       }
     },
     watch: {
@@ -122,6 +141,7 @@
         this.tabItems.filter(t => t.id === id).forEach(t => t.titleScope = value)
       },
       closeTab() {
+        console.log('close tab', this.activeTab)
         this.close(this.activeTab)
       },
       handleCreateTab() {
@@ -233,23 +253,8 @@
           duplicatedTab['table'] = tab.table
         }
         this.addTab(duplicatedTab)
-      }
-    },
-    mounted() {
-      this.createQuery()
-      this.$root.$on(AppEvent.closeTab, () => {
-        this.closeTab()
-      })
-      this.$root.$on(AppEvent.newTab, () => { this.createQuery() })
-      this.$root.$on('historyClick', (item) => {
-        this.createQuery(item.text)
-      })
-
-      this.$root.$on('loadTable', this.openTable)
-      this.$root.$on('loadSettings', this.openSettings)
-      this.$root.$on('loadTableCreate', this.loadTableCreate)
-      this.$root.$on('loadRoutineCreate', this.loadRoutineCreate)
-      this.$root.$on('favoriteClick', (item) => {
+      },
+      favoriteClick(item) {
         const queriesOnly = this.tabItems.map((item) => {
           return item.query
         })
@@ -266,8 +271,22 @@
             unsavedChanges: false
           }
           this.addTab(result)
-        }
+        }        
+      },
+      createQueryFromItem(item) {
+        this.createQuery(item.text)
+      }
+    },
+    beforeDestroy() {
+      this.rootBindings.forEach(({event, handler}) => {
+        this.$root.$off(event, handler)
       })
+    },
+    mounted() {
+      this.rootBindings.forEach(({ event, handler }) => {
+        this.$root.$on(event, handler)
+      })
+      this.createQuery()
     }
   }
 </script>
